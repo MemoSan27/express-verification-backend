@@ -2,6 +2,9 @@ const catchError = require('../utils/catchError');
 const User = require('../models/User');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const sendEmail = require('../utils/sendEmail');
+const EmailCode = require('../models/EmailCode');
+
 
 const getAll = catchError(async(req, res) => {
     try{
@@ -16,94 +19,96 @@ const getAll = catchError(async(req, res) => {
 });
 
 const create = catchError(async(req, res) => {
-    try{
+        const code = require('crypto').randomBytes(32).toString('hex');
+        const frontBaseUrl = process.env.FRONTEND_URL;
         const { password, ...rest } = req.body;
         const encriptedPassword = await bcrypt.hash(password, 10);
+
         const user = await User.create({
             password: encriptedPassword,
             ...rest,
         });
-        return res.status(201).json(user);
-    }catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
+
+        await sendEmail({
+            to: 'memo2705@gmail.com',
+            subject: 'Verifica tu email',
+            html: `
+                <h1> Verificacion de email</h1>
+                <p style="color: red">Clickea el siguiente enlace para verificar tu cuenta: </p>
+                <p> ${frontBaseUrl}/auth/verify_email/${code}</p>
+            `
+        })
+
+        await EmailCode.create({ code, userId: user.id })
+
+        return res.status(201).json({ message: 'Usuario creado satisfactoriamente. Por favor ve al correo registrado a verificar tu cuenta para poder hacer inicio de sesion' })
 });
 
 const getOne = catchError(async(req, res) => {
-    try{
-        const user2 = req.user;
-        console.log(user2);
-        const { id } = req.params; 
-        const user = await User.findByPk(id);
-        if(!user) return res.sendStatus(404);
-        return res.json(user);
-    }catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
+    const user2 = req.user;
+    console.log(user2);
+    const { id } = req.params; 
+    const user = await User.findByPk(id);
+    if(!user) return res.sendStatus(404);
+    return res.json(user);
 });
 
 const remove = catchError(async(req, res) => {
-    try{
         const { id } = req.params;
         await User.destroy({ where: {id} });
         return res.sendStatus(204);
-    }catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
 });
 
 const update = catchError(async(req, res) => {
-    try{
-        const { id } = req.params;
-        const { firstName, lastName } = req.body;
-        const user = await User.update(
-            {
-                firstName,
-                lastName,
-            },
-            { where: {id}, returning: true }
-        );
-        if(user[0] === 0) return res.sendStatus(404);
-        return res.json(user[1][0]);
-    }catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
+    const { id } = req.params;
+    const { firstName, lastName } = req.body;
+    const user = await User.update(
+        {
+            firstName,
+            lastName,
+        },
+        { where: {id}, returning: true }
+    );
+    if(user[0] === 0) return res.sendStatus(404);
+    return res.json(user[1][0]);
 });
 
 const login = catchError(async(req,res) => {
-    try{
-        const { email, password } = req.body;
-        const user = await User.findOne({ where: { email }});
-        if(!user) return res.status(401).json({ message: 'Invalid credentials'});
-        const isValid = await bcrypt.compare(password, user.password)
-        if(!isValid) return res.status(401).json({ message: 'Invalid credentials'});
-    
-        const token = jwt.sign(
-                {user},
-                process.env.TOKEN_SECRET, 
-                { expiresIn: "1d" }
-             );
-    
-        return res.json({user, token});
-    }catch (error) {
-        console.error(error);
-        res.status(500).json({ error });
-    }
+    const { email, password } = req.body;
+    const user = await User.findOne({ where: { email }});
+    if(!user) return res.status(401).json({ message: 'Invalid credentials'});
+    const isValid = await bcrypt.compare(password, user.password)
+    if(!isValid) return res.status(401).json({ message: 'Invalid credentials'});
+    if(!user.isVerified) return res.status(401).json({ message: 'User is not verified yet'});
+
+    const token = jwt.sign(
+            {user},
+            process.env.TOKEN_SECRET, 
+            { expiresIn: "1d" }
+            );
+
+    return res.json({user, token});
 });
 
 
 const getLoggedUser = catchError(async(req,res) => {
-    try{
-        const user = req.user;
-        return res.json(user);
-    }catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
+    const user = req.user;
+    return res.json(user);
+    
+});
+
+const verifyEmail = catchError(async(req,res) => {
+   
+    const {code} = req.params;
+    const emailCode = await EmailCode.findOne({ where: {code} });
+    if(!emailCode) return res.status(401).json({error: `Code ${code} is not valid.` });
+
+    const user = await User.findByPk(emailCode.userId);
+    await user.update({ isVerified: true });
+
+    await emailCode.destroy();
+
+    return res.status(201).json({message: 'Correo verificado exitosamente'})
 })
 
 User.prototype.toJSON = function () {
@@ -119,5 +124,6 @@ module.exports = {
     remove,
     update,
     login,
-    getLoggedUser
+    getLoggedUser,
+    verifyEmail
 }

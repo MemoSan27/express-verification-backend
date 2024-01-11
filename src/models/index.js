@@ -1,5 +1,5 @@
-const Code = require("./Code");
+const EmailCode = require("./EmailCode");
 const User = require("./User");
 
-User.hasMany(Code);
-Code.belongsTo(User);
+User.hasOne(EmailCode);
+EmailCode.belongsTo(User);

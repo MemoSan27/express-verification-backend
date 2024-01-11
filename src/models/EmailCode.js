@@ -1,11 +1,11 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../utils/connection');
 
-const Code = sequelize.define('code', {
+const EmailCode = sequelize.define('emailcode', {
     code: {
         type: DataTypes.TEXT,
         allowNull: false
     },
 });
 
-module.exports = Code;
+module.exports = EmailCode;
