@@ -75,7 +75,7 @@ const update = catchError(async(req, res) => {
 });
 
 const login = catchError(async(req,res) => {
-    
+    try{
         const { email, password } = req.body;
         const user = await User.findOne({ where: { email }});
         if(!user) return res.status(401).json({ message: 'Invalid credentials'});
@@ -89,7 +89,10 @@ const login = catchError(async(req,res) => {
              );
     
         return res.json({user, token});
-    
+    }catch (error) {
+        console.error(error);
+        res.status(500).json({ error });
+    }
 });
 
 
