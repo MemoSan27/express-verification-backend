@@ -20,13 +20,14 @@ const getAll = catchError(async(req, res) => {
 
 const create = catchError(async(req, res) => {
         const code = require('crypto').randomBytes(32).toString('hex');
-        const frontBaseUrl = process.env.FRONTEND_URL;
-        const { password, email, ...rest } = req.body;
+        //const frontBaseUrl = process.env.FRONTEND_URL;
+        const { password, email, frontBaseUrl, ...rest } = req.body;
         const encriptedPassword = await bcrypt.hash(password, 10);
 
         const user = await User.create({
             email,
             password: encriptedPassword,
+            frontBaseUrl,
             ...rest,
         });
 
@@ -116,10 +117,10 @@ const verifyEmail = catchError(async(req,res) => {
     return res.status(201).json({message: 'Correo verificado exitosamente'})
 });
 
-const resetPassword = catchError(async(req,res) => {
+const startResetPassword = catchError(async(req,res) => {
     const code = require('crypto').randomBytes(32).toString('hex');
-    const frontBaseUrl = process.env.FRONTEND_URL;
-    const { email } = req.body;
+    //const frontBaseUrl = process.env.FRONTEND_URL;
+    const { email, frontBaseUrl } = req.body;
     const userEmail = await User.findOne({ where: {email} });
     if(!userEmail) return res.status(401).json({error: `Email ${email} no existe en la base de datos.` });
 
@@ -134,10 +135,23 @@ const resetPassword = catchError(async(req,res) => {
     });
 
     await EmailCode.create({ code, userId: userEmail.id })
+    return res.status(201).json({message: `Se ha enviado un correo a ${email}, revisa tu bandeja o en spam`});
+});
 
+const resetPassword = catchError(async(req,res) => {
+    const {code} = req.params;
+    const emailCode = await EmailCode.findOne({ where: {code} });
+    if(!emailCode) return res.status(401).json({error: `Code ${code} is not valid.` });
 
-    return res.status(201).json({message: 'Correo encontrado'});
+    const {password} = req.body;
+    const encriptedPassword = await bcrypt.hash(password, 10);
 
+    const user = await User.findByPk(emailCode.userId);
+    await user.update({ password: encriptedPassword });
+    
+    await emailCode.destroy();
+
+    return res.status(201).json({message: 'Password cambiado de forma exitosa'})
 })
 
 User.prototype.toJSON = function () {
@@ -155,5 +169,6 @@ module.exports = {
     login,
     getLoggedUser,
     verifyEmail,
+    startResetPassword,
     resetPassword,
 }
