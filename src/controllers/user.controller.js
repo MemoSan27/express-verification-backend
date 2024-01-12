@@ -21,16 +21,17 @@ const getAll = catchError(async(req, res) => {
 const create = catchError(async(req, res) => {
         const code = require('crypto').randomBytes(32).toString('hex');
         const frontBaseUrl = process.env.FRONTEND_URL;
-        const { password, ...rest } = req.body;
+        const { password, email, ...rest } = req.body;
         const encriptedPassword = await bcrypt.hash(password, 10);
 
         const user = await User.create({
+            email,
             password: encriptedPassword,
             ...rest,
         });
 
         await sendEmail({
-            to: 'memo2705@gmail.com',
+            to: `${email}`,
             subject: 'Verifica tu email',
             html: `
                 <h1> Verificacion de email</h1>
@@ -60,12 +61,17 @@ const remove = catchError(async(req, res) => {
 });
 
 const update = catchError(async(req, res) => {
+    const { id: userId} = req.user;
     const { id } = req.params;
-    const { firstName, lastName } = req.body;
+    console.log({userId, id})
+    if(+id !== userId) return res.status(401).json({ message: 'Unhautorized to modify information from this user'});
+    const { firstName, lastName, country, image } = req.body;
     const user = await User.update(
         {
             firstName,
             lastName,
+            country,
+            image,
         },
         { where: {id}, returning: true }
     );
@@ -97,8 +103,7 @@ const getLoggedUser = catchError(async(req,res) => {
     
 });
 
-const verifyEmail = catchError(async(req,res) => {
-   
+const verifyEmail = catchError(async(req,res) => {   
     const {code} = req.params;
     const emailCode = await EmailCode.findOne({ where: {code} });
     if(!emailCode) return res.status(401).json({error: `Code ${code} is not valid.` });
@@ -109,6 +114,30 @@ const verifyEmail = catchError(async(req,res) => {
     await emailCode.destroy();
 
     return res.status(201).json({message: 'Correo verificado exitosamente'})
+});
+
+const resetPassword = catchError(async(req,res) => {
+    const code = require('crypto').randomBytes(32).toString('hex');
+    const frontBaseUrl = process.env.FRONTEND_URL;
+    const { email } = req.body;
+    const userEmail = await User.findOne({ where: {email} });
+    if(!userEmail) return res.status(401).json({error: `Email ${email} no existe en la base de datos.` });
+
+    await sendEmail({
+        to: `${email}`,
+        subject: 'Recuperacion de contraseña',
+        html: `
+            <h1> Recupera tu contraseña</h1>
+            <p style="color: red">Clickea el siguiente enlace para resetear la contraseña de tu cuenta: </p>
+            <p> ${frontBaseUrl}/auth/reset_password/${code}</p>
+        `
+    });
+
+    await EmailCode.create({ code, userId: userEmail.id })
+
+
+    return res.status(201).json({message: 'Correo encontrado'});
+
 })
 
 User.prototype.toJSON = function () {
@@ -125,5 +154,6 @@ module.exports = {
     update,
     login,
     getLoggedUser,
-    verifyEmail
+    verifyEmail,
+    resetPassword,
 }
